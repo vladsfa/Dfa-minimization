@@ -38,7 +38,7 @@ public class Dfa {
         for (int i = 0; i < nFinalStates; i++)
         {
             Integer finalState = Integer.parseInt(lineFinalStates[i + 1]);
-            if (finalState > nStates)
+            if (finalState >= nStates)
                 throw new Exception("Фінальний стан не належить множині станів");
             dfa.finalStates.add(finalState);
         }
@@ -49,7 +49,7 @@ public class Dfa {
             Integer from = Integer.parseInt(transition[0]);
             Character letter = transition[1].charAt(0);
             Integer to = Integer.parseInt(transition[2]);
-            if (from > nStates || to > nStates)
+            if (from >= nStates || to >= nStates)
                 throw new Exception("Стани з функцій переходу не належать множині станів");
             if ((int)letter > 96 + nAlphabet)
                 throw new Exception("Букви з функцій переходу не належать множині букв");
