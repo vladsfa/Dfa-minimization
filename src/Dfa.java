@@ -1,35 +1,23 @@
 import java.util.*;
 
 public class Dfa {
-    public Set<Character> alphabet;
-    public Set<Integer> states;
-    public Integer startState;
-    public Set<Integer> finalStates;
-    public Map<Integer, Map<Character, Integer>> transition;
-
-    private Dfa(int nAlphabet, int nStates, int startState) throws Exception {
-        if (startState > nStates)
-            throw new Exception("Початковий стан не належить множині станів");
-        if (nAlphabet > 26)
-            throw new Exception("Кількість букв в алфавіті більше допустимого: >26");
-
-        alphabet = new HashSet<>();
-        for (int i = 0; i < nAlphabet; i++)
-            alphabet.add((char) (97 + i));
-
-        states = new HashSet<>();
-        for (int i = 0; i < nStates; i++)
-            states.add(i);
-
-        transition = new HashMap<>();
-        this.startState = startState;
-        finalStates = new HashSet<>();
+    public final Set<Character> alphabet;
+    public final Set<Integer> states;
+    public final Integer startState;
+    public final Set<Integer> finalStates;
+    public final Map<Integer, Map<Character, Integer>> transition;
+    public static Dfa DeleteDeadStates(Dfa dfa) throws Exception {
+        return DeleteStates(dfa, Dfa.GetDeletionStates(dfa, Dfa.GetNotDeadStates(dfa)));
+    }
+    public static Dfa DeleteNotReachableStates(Dfa dfa) throws Exception {
+        return DeleteStates(dfa, Dfa.GetDeletionStates(dfa, Dfa.GetReachableStates(dfa)));
     }
     public static Dfa ReadDfa(Scanner scanner) throws Exception {
         int nAlphabet = Integer.parseInt(scanner.nextLine());
         int nStates = Integer.parseInt(scanner.nextLine());
         int startState = Integer.parseInt(scanner.nextLine());
-        Dfa dfa = new Dfa(nAlphabet, nStates, startState);
+        var finalSt = new HashSet<Integer>();
+        var transFunc = new HashMap<Integer, Map<Character, Integer>>();
 
         String[] lineFinalStates = scanner.nextLine().split(" ");
         int nFinalStates = Integer.parseInt(lineFinalStates[0]);
@@ -37,7 +25,7 @@ public class Dfa {
             int finalState = Integer.parseInt(lineFinalStates[i + 1]);
             if (finalState >= nStates)
                 throw new Exception("Фінальний стан не належить множині станів");
-            dfa.finalStates.add(finalState);
+            finalSt.add(finalState);
         }
 
         while (scanner.hasNextLine()) {
@@ -50,214 +38,210 @@ public class Dfa {
             if ((int) letter > 96 + nAlphabet)
                 throw new Exception("Букви з функцій переходу не належать множині букв");
 
-            if (!dfa.transition.containsKey(from))
-                dfa.transition.put(from, new HashMap<>());
+            if (!transFunc.containsKey(from))
+                transFunc.put(from, new HashMap<>());
 
-            if (dfa.transition.get(from).containsKey(letter))
+            if (transFunc.get(from).containsKey(letter))
                 throw new Exception("Недетермінований автомат неможливо мінімізувати");
 
-            dfa.transition.get(from).put(letter, to);
+            transFunc.get(from).put(letter, to);
         }
-        return dfa;
+        return new Dfa(nAlphabet, nStates, startState, finalSt, transFunc);
     }
-    private void DeleteStates(Set<Integer> states)
-    {
-        if (states.size() == 0)
-            return;
-        var newNumberStates = GetNewNumberStates(new ArrayList<>(states));
+    private Dfa(int nAlph, int nSt, int startSt, Set<Integer> finalSt,
+                Map<Integer, Map<Character, Integer>> transFunc) throws Exception {
+        if (startSt > nSt)
+            throw new Exception("Початковий стан не належить множині станів");
+        if (nAlph > 26)
+            throw new Exception("Кількість букв в алфавіті більше допустимого: >26");
 
-        var newStates = new HashSet<Integer>();
+        alphabet = new HashSet<>();
+        for (int i = 0; i < nAlph; i++)
+            alphabet.add((char) (97 + i));
+
+        states = new HashSet<>();
+        for (int i = 0; i < nSt; i++)
+            states.add(i);
+
+        transition = transFunc;
+        this.startState = startSt;
+        finalStates = finalSt;
+    }
+    private static Dfa DeleteStates(Set<Integer> delSt, Set<Character> delAlp, Dfa dfa)
+            throws Exception {
+        var newNumberStates = GetNewNumber(delSt, new ArrayList<>(dfa.states));
+        var newNameLetters = GetNewNames(delAlp, dfa.alphabet);
+        var newTransition =  CleanTransition(
+                delSt, newNumberStates, newNameLetters, dfa);
+
         var newFinalStates = new HashSet<Integer>();
-        for (var infoPair : newNumberStates.values())
-        {
-            newStates.add(infoPair.state);
-            if (infoPair.isFinal)
-                newFinalStates.add(infoPair.state);
-        }
-        var newTransition = CleanTransition(states, newNumberStates);
+        for (var entry : newNumberStates.entrySet())
+            if (dfa.finalStates.contains(entry.getKey()))
+                newFinalStates.add(entry.getValue());
 
-        if (states.contains(this.startState))
-            this.startState = -1;
-        this.states = newStates;
-        this.finalStates = newFinalStates;
-        this.transition = newTransition;
-        this.alphabet = GetReachableLetters();
+        var nAlphabet = dfa.alphabet.size() - delAlp.size();
+        var nStates = dfa.states.size() - delSt.size();
+
+        return new Dfa(nAlphabet, nStates,
+                delSt.contains(dfa.startState) ? -1 : 0,
+                newFinalStates, newTransition);
     }
-    private Set<Character> GetNotReachableLetters(Set<Character> reachableLetters)
-    {
-        var notReachableLetters = new HashSet<Character>(this.alphabet);
-        notReachableLetters.removeAll(reachableLetters);
-        return notReachableLetters;
-    }
-    private Set<Character> GetReachableLetters()
-    {
-        var reachableLetters = new HashSet<Character>();
-        for (var fromSt : transition.keySet())
-            reachableLetters.addAll(transition.get(fromSt).keySet());
-        return reachableLetters;
-    }
-    private HashMap<Integer, Map<Character, Integer>> CleanTransition(
-            Set<Integer> states, Map<Integer, InfoStatePair> newNumber)
+
+    private static HashMap<Integer, Map<Character, Integer>> CleanTransition(
+            Set<Integer> states, Map<Integer, Integer> newNumber,
+            Map<Character, Character> newName, Dfa dfa)
     {
         var newTransition = new HashMap<Integer, Map<Character, Integer>>();
 
         for (var state : states)
-            this.transition.remove(state);
-        for (var fromEntry : transition.entrySet())
+            dfa.transition.remove(state);
+        for (var fromEntry : dfa.transition.entrySet())
         {
-            for (var toEntry : transition.get(fromEntry.getKey()).entrySet())
+            for (var toEntry : dfa.transition.get(fromEntry.getKey()).entrySet())
                 if (!states.contains(toEntry.getValue()))
                 {
-                    if (!newTransition.containsKey(newNumber.get(fromEntry.getKey()).state))
-                        newTransition.put(newNumber.get(fromEntry.getKey()).state, new HashMap<Character, Integer>());
-                    newTransition.get(newNumber.get(fromEntry.getKey()).state)
-                            .put(toEntry.getKey(), newNumber.get(toEntry.getValue()).state);
+                    if (!newTransition.containsKey(newNumber.get(fromEntry.getKey())))
+                        newTransition.put(newNumber.get(fromEntry.getKey()), new HashMap<Character, Integer>());
+                    newTransition.get(newNumber.get(fromEntry.getKey()))
+                            .put(newName.get(toEntry.getKey()), newNumber.get(toEntry.getValue()));
                 }
         }
         return newTransition;
     }
-    private Map<Integer, InfoStatePair> GetNewNumberStates(List<Integer> states)
+    private static Map<Integer, Integer> GetNewNumber(
+            Set<Integer> removeElem, List<Integer> removeFrom)
     {
-        Collections.sort(states);
-        var newNumber = new HashMap<Integer, InfoStatePair>();
-        Integer counter = 0;
-        for (var state : this.states)
+        Collections.sort(removeFrom);
+        var newNames = new HashMap<Integer, Integer>();
+        int counter = 0;
+        for (var elem : removeFrom)
         {
-            if (counter < states.size() && states.get(counter).equals(state))
+            if (removeElem.contains(elem))
             {
                 counter += 1;
                 continue;
             }
-            var infoStatePair = new InfoStatePair(
-                    state - counter, this.finalStates.contains(state));
-            newNumber.put(state, infoStatePair);
+            newNames.put(elem, elem - counter);
         }
-        return newNumber;
+        return newNames;
     }
-    public static Dfa DeleteDeadStates (Dfa dfa)
+    private static Map<Character, Character> GetNewNames(Set<Character> removeLetter, Set<Character> alphabet)
     {
-        Set<Integer> deadStates = dfa.GetDeadStates();
-        dfa.DeleteStates(deadStates);
-        return dfa;
+        var lettersNumber = new HashSet<Integer>();
+        for (var elem : removeLetter)
+            lettersNumber.add((int)elem);
+        var alphabetNumber = new ArrayList<Integer>();
+        for (var elem : alphabet)
+            alphabetNumber.add((int)elem);
+
+        var newNumber = GetNewNumber(lettersNumber, alphabetNumber);
+
+        var convertToChar = new HashMap<Character, Character>();
+        for (var entry : newNumber.entrySet())
+            convertToChar.put((char)(int)entry.getKey(), (char)(int)entry.getValue());
+        return convertToChar;
     }
-    private Set<Integer> GetDeadStates()
-    {
-        Set<Integer> deadStates = new HashSet<>(states);
-        deadStates.removeAll(GetNotDeadStates());
-        return deadStates;
+    private static Dfa DeleteStates(Dfa dfa, StAndAlp delStAndAlp) throws Exception {
+        return DeleteStates(delStAndAlp.St, delStAndAlp.Alp, dfa);
     }
-    private Set<Integer> GetNotDeadStates()
+    private static StAndAlp GetDeletionStates(Dfa dfa, StAndAlp stAndAlp)
     {
-        Set<Integer> notDeadStates = new HashSet<>(finalStates);
-        Set<Integer> workStates = new HashSet<>(finalStates);
+        Set<Integer> deadStates = new HashSet<>(dfa.states);
+        deadStates.removeAll(stAndAlp.St);
+        Set<Character> notReachAlp = new HashSet<>(dfa.alphabet);
+        notReachAlp.removeAll(stAndAlp.Alp);
+        return new StAndAlp(deadStates, notReachAlp);
+    }
+    private static StAndAlp GetNotDeadStates(Dfa dfa)
+    {
+        Set<Integer> notDeadStates = new HashSet<>(dfa.finalStates);
+        Set<Character> reachableAlp = new HashSet<>();
+        Set<Integer> workStates = dfa.finalStates;
         while (!workStates.isEmpty())
         {
             Set<Integer> temp = new HashSet<>();
             for (var workState : workStates)
-                for (var entry : transition.entrySet())
-                    if (entry.getValue().containsValue(workState))
-                    {
-                        if (!notDeadStates.contains(entry.getKey()))
-                            temp.add(entry.getKey());
-                        notDeadStates.add(entry.getKey());
-                    }
+                for (var entry : dfa.transition.entrySet())
+                    for (var entryTo : entry.getValue().entrySet())
+                        if (entryTo.getValue().equals(workState))
+                        {
+                            if (!notDeadStates.contains(entry.getKey()))
+                                temp.add(entry.getKey());
+                            notDeadStates.add(entry.getKey());
+                            reachableAlp.add(entryTo.getKey());
+                        }
             workStates = temp;
         }
-        return notDeadStates;
+        return new StAndAlp(notDeadStates, reachableAlp);
     }
-
-    public static void DeleteNotReachableStates(Dfa dfa)
+    private static StAndAlp GetReachableStates(Dfa dfa)
     {
-        Set<Integer> notReachableStates = dfa.GetNotReachableStates();
-        dfa.DeleteStates(notReachableStates);
-    }
-    private Set<Integer> GetNotReachableStates()
-    {
-        Set<Integer> NotReachableStates = new HashSet<>(states);
-        NotReachableStates.removeAll(GetReachableStates());
-        return NotReachableStates;
-    }
-    private Set<Integer> GetReachableStates()
-    {
-        Set<Integer> ReachableStates = new HashSet<>(Collections.singletonList(startState));
-        Set<Integer> WorkStates = new HashSet<>(Collections.singletonList(startState));
+        Set<Integer> ReachableStates = new HashSet<>(Collections.singletonList(dfa.startState));
+        Set<Character> reachableAlp = new HashSet<>();
+        Set<Integer> WorkStates = new HashSet<>(Collections.singletonList(dfa.startState));
         while (!WorkStates.isEmpty())
         {
             Set<Integer> temp = new HashSet<>();
             for (Integer fromState : WorkStates) {
-                if(!transition.containsKey(fromState))
+                if(!dfa.transition.containsKey(fromState))
                     continue;
-                List<Integer> toStates = new ArrayList<>(transition.get(fromState).values());
+                Set<Integer> toStates = new HashSet<>(dfa.transition.get(fromState).values());
+                reachableAlp.addAll(dfa.transition.get(fromState).keySet());
                 toStates.removeAll(ReachableStates);
                 ReachableStates.addAll(toStates);
                 temp.addAll(toStates);
             }
             WorkStates = new HashSet<>(temp);
         }
-        return ReachableStates;
+        return new StAndAlp(ReachableStates, reachableAlp);
     }
-
-    public static void Minimize(Dfa dfa)
-    {
-        Dfa.DeleteNotReachableStates(dfa);
-        Dfa.DeleteDeadStates(dfa);
-
-        var eqClasses = new ArrayList<List<Integer>>();
-        var notFinal = new ArrayList<Integer>(dfa.states);
-        notFinal.removeAll(new ArrayList<Integer>(dfa.finalStates));
+    public static Dfa Minimize(Dfa dfa) throws Exception {
+        dfa = Dfa.DeleteDeadStates(dfa);
+        dfa = Dfa.DeleteNotReachableStates(dfa);
+        
+        var eqClasses = new ArrayList<Set<Integer>>();
+        var notFinal = new HashSet<Integer>(dfa.states);
+        notFinal.removeAll(new HashSet<Integer>(dfa.finalStates));
         eqClasses.add(notFinal);
-        eqClasses.add(new ArrayList<>(dfa.finalStates));
+        eqClasses.add(dfa.finalStates);
 
-        boolean flag = true;
-        while(flag)
+        while(true)
         {
-            var tempEqClasses = new HashSet<List<Integer>>();
-            for (var eqCl : eqClasses)
+            var tempEqClasses = new ArrayList<Set<Integer>>();
+            for (var eq : eqClasses)
             {
-                var tempEqCl = new HashSet<Integer>();
-                for (var st : eqCl)
+                var work = new HashMap<Map<Character, Integer>, Set<Integer>>();
+                for (var fromSt : eq)
                 {
-                    boolean isSame = true;
-                    for (var letter : dfa.alphabet)
-                    {
-                        if (!eqCl.contains(dfa.transition.get(st).get(letter)))
-                        {
-                            tempEqClasses.add(Collections.singletonList(st));
-                            isSame = false;
-                            break;
-                        }
-                    }
-                    if (isSame)
-                        tempEqCl.add(st);
+                    var toEq = new HashMap<Character, Integer>();
+                    for (var entry : dfa.transition.get(fromSt).entrySet())
+                        toEq.put(entry.getKey(), FindNumberEqClass(entry.getValue(), eqClasses));
+                    if (!work.containsKey(toEq))
+                        work.put(toEq, new HashSet<>());
+                    work.get(toEq).add(fromSt);
                 }
-                if (!tempEqCl.isEmpty())
-                    tempEqClasses.add(new ArrayList<>(tempEqCl));
+                tempEqClasses.addAll(work.values());
             }
-            var temp = new ArrayList<List<Integer>>(tempEqClasses);
-            if (temp.equals(eqClasses))
-                flag = false;
-            eqClasses = new ArrayList<>(temp);
+            if (tempEqClasses.equals(eqClasses))
+                break;
+            eqClasses = new ArrayList<>(tempEqClasses);
         }
 
         var newFinalStates = new HashSet<Integer>();
-        var newStates = new HashSet<Integer>();
         var fromStToEq = new HashMap<Integer, Integer>();
-        for (var eq : eqClasses)
-        {
-            var eqN = eqClasses.indexOf(eq);
-            for (var state : eq)
+        var newStartState = 0;
+        for (int i = 0; i < eqClasses.size(); i++)
+            for (var st : eqClasses.get(i))
             {
-                fromStToEq.put(state, eqN);
-                if (state.equals(dfa.startState))
-                    dfa.startState = eqN;
-                if (dfa.finalStates.contains(state))
-                    newFinalStates.add(eqN);
+                fromStToEq.put(st, i);
+                if (st.equals(dfa.startState))
+                    newStartState = i;
+                if (dfa.finalStates.contains(st))
+                    newFinalStates.add(i);
             }
-            newStates.add(eqN);
-        }
 
         var newTransition = new HashMap<Integer, Map<Character, Integer>>();
-        for (var st : fromStToEq.keySet())
+        for (var st : dfa.states)
         {
             var eqSt = fromStToEq.get(st);
             if (!newTransition.containsKey(eqSt))
@@ -267,17 +251,22 @@ public class Dfa {
                         letter, fromStToEq.get(dfa.transition.get(st).get(letter)));
         }
 
-        dfa.states = newStates;
-        dfa.finalStates = newFinalStates;
-        dfa.transition = newTransition;
+        return new Dfa(dfa.alphabet.size(), eqClasses.size(),
+                newStartState, newFinalStates, newTransition);
     }
-    private class InfoStatePair {
-        public Integer state;
-        public Boolean isFinal;
-        public InfoStatePair(Integer state, Boolean isFinal)
+    private static Integer FindNumberEqClass(Integer st, ArrayList<Set<Integer>> eqClasses) throws Exception {
+        for (var eqC : eqClasses)
+            if (eqC.contains(st))
+                return eqClasses.indexOf(eqC);
+        throw new Exception();
+    }
+    private static class StAndAlp {
+        public final Set<Integer> St;
+        public final Set<Character> Alp;
+        public StAndAlp(Set<Integer> delSt, Set<Character> delAlp)
         {
-            this.state = state;
-            this.isFinal = isFinal;
+            this.St = new HashSet<Integer>(delSt);
+            this.Alp = new HashSet<Character>(delAlp);
         }
     }
 }
