@@ -79,9 +79,9 @@ public class Minimization
                         letter, fromStToEq.get(dfa.transition.get(st).get(letter)));
 
             if (dfa.startState.equals(st))
-                newStartState = st;
+                newStartState = eqSt;
             if (dfa.finalStates.contains(st))
-                newFinalStates.add(st);
+                newFinalStates.add(eqSt);
         }
 
         return new Dfa(alphabet, states, newStartState,
